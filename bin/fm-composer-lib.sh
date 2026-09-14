@@ -61,9 +61,9 @@
 #   left-bar   - opencode: rows prefixed by a heavy left bar `┃` with no
 #                closing border, holding the idle hint, blank rows, and a
 #                mode/model footer line.
-#   separated  - pi: content rows between two solid horizontal `─` rules, no
-#                glyph and no side border. Provable only with a live agent
-#                identity reporting an idle/done pi (herdr `agent
+#   separated  - pi, agy: content rows between two solid horizontal `─` rules, no
+#                glyph and no side border (pi) or a shell `>` prompt (agy). Provable only
+#                with a live agent identity reporting an idle/done agent (herdr `agent
 #                get`; the tmux foreground-process probe), because a blank
 #                region between two transcript rules is otherwise exactly the
 #                strict rule's unidentifiable blank row.
@@ -1302,7 +1302,7 @@ EOF
     if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 1 ] \
        && [ "$cy" -gt "$FM_COMPOSER_SCAN_PI_OPEN" ] \
        && [ "$cy" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; then
-      _fm_composer_pi_verdict "$screen" "$styled" "$has_identity" "$identity"
+      _fm_composer_separated_verdict "$screen" "$styled" "$has_identity" "$identity"
       return 0
     fi
     if [ "$FM_COMPOSER_SCAN_CURSOR_EDGE" = 1 ]; then
@@ -1323,7 +1323,7 @@ EOF
   fi
   case "$FM_COMPOSER_SELECTED_KIND" in
     pi)
-      _fm_composer_pi_verdict "$screen" "$styled" "$has_identity" "$identity"
+      _fm_composer_separated_verdict "$screen" "$styled" "$has_identity" "$identity"
       ;;
     box)
       _fm_composer_classify_rows "$screen" "$styled" "$FM_COMPOSER_SELECTED_AMBIG" \
@@ -1427,11 +1427,70 @@ _fm_composer_classify_bare_pi_overlap() {  # <screen> <styled> <has-identity> <i
     return 0
   fi
   agent=${identity%%$'\t'*}
-  if [ "$agent" = pi ]; then
-    _fm_composer_pi_verdict "$screen" "$styled" "$has_identity" "$identity"
+  if [ "$agent" = pi ] || [ "$agent" = agy ]; then
+    _fm_composer_separated_verdict "$screen" "$styled" "$has_identity" "$identity"
   else
     _fm_composer_classify_bare_row "$screen" "$styled" "$row"
   fi
+}
+
+_fm_composer_classify_agy_rows() {  # <screen> <styled>
+  local screen=$1 styled=$2 row raw content state saw_pending=0
+  row=$((FM_COMPOSER_SCAN_PI_OPEN + 1))
+  while [ "$row" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; do
+    raw=$(_fm_composer_screen_row "$row" "$screen")
+    content=$(_fm_composer_row_content "$raw" "$styled")
+    state=$(fm_composer_classify_content 1 "$content")
+    case "$state" in
+      pending) saw_pending=1 ;;
+      unknown) printf 'unknown'; return 0 ;;
+    esac
+    row=$((row + 1))
+  done
+  if [ "$saw_pending" -eq 1 ]; then
+    printf 'pending'
+  else
+    printf 'empty'
+  fi
+}
+
+# The agy separated-shape verdict: identity + structure conjunction.
+# A missing identity capability keeps the shape unknown. Inside the separator
+# pair, agy draws `>` as an empty prompt, which fm_composer_classify_content 1
+# classifies as empty. Only an idle/done agy proves an empty composer.
+_fm_composer_agy_verdict() {  # <screen> <styled> <has_identity> <identity>
+  local screen=$1 styled=$2 has_identity=$3 identity=$4 agent agent_status state
+  if [ "$has_identity" != 1 ]; then
+    printf 'unknown'
+    return 0
+  fi
+  if [ -z "$identity" ]; then
+    printf 'need-identity'
+    return 0
+  fi
+  if [ "$identity" = probe-absent ]; then
+    printf 'unknown'
+    return 0
+  fi
+  agent=${identity%%$'\t'*}
+  agent_status=${identity#*$'\t'}
+  if [ "$agent" != agy ] || [ "$FM_COMPOSER_SCAN_PI_PAIR_VALID" != 1 ]; then
+    printf 'unknown'
+    return 0
+  fi
+  state=$(_fm_composer_classify_agy_rows "$screen" "$styled")
+  if [ "$state" = pending ]; then
+    printf 'pending'
+    return 0
+  fi
+  if [ "$state" = unknown ]; then
+    printf 'unknown'
+    return 0
+  fi
+  case "$agent_status" in
+    idle|done) printf 'empty' ;;
+    *) printf 'unknown' ;;
+  esac
 }
 
 # The pi separated-shape verdict: identity + structure conjunction (herdr's
@@ -1470,6 +1529,31 @@ _fm_composer_pi_verdict() {  # <screen> <styled> <has_identity> <identity>
   fi
   case "$agent_status" in
     idle|done) printf 'empty' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# The separated-shape verdict (pi, agy): identity + structure conjunction.
+# Dispatches to _fm_composer_pi_verdict or _fm_composer_agy_verdict based on
+# verified agent identity.
+_fm_composer_separated_verdict() {  # <screen> <styled> <has_identity> <identity>
+  local screen=$1 styled=$2 has_identity=$3 identity=$4 agent
+  if [ "$has_identity" != 1 ]; then
+    printf 'unknown'
+    return 0
+  fi
+  if [ -z "$identity" ]; then
+    printf 'need-identity'
+    return 0
+  fi
+  if [ "$identity" = probe-absent ]; then
+    printf 'unknown'
+    return 0
+  fi
+  agent=${identity%%$'\t'*}
+  case "$agent" in
+    pi) _fm_composer_pi_verdict "$screen" "$styled" "$has_identity" "$identity" ;;
+    agy) _fm_composer_agy_verdict "$screen" "$styled" "$has_identity" "$identity" ;;
     *) printf 'unknown' ;;
   esac
 }

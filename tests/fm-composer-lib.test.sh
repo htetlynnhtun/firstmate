@@ -390,6 +390,32 @@ test_matrix_pi_separated_needs_identity() {
   pass "matrix: pi's separated composer needs identity + structure; the blank row alone never proves it"
 }
 
+test_matrix_agy_separated_needs_identity() {
+  # Real idle agy: a `>` row between two solid rules, with a footer `? for shortcuts`.
+  # The separated shape alone is unprovable without identity; only structure PLUS
+  # a live idle/done agy identity proves the composer.
+  local screen typed agy_idle agy_working none
+  screen=$'transcript\n────────────────────────\n>\n────────────────────────\n? for shortcuts'
+  agy_idle=$(printf 'agy\tidle'); agy_working=$(printf 'agy\tworking'); none=$(printf 'zsh\t')
+  assert_screen "agy idle with identity" empty "$CAPS_STYLED" "$screen" '' "$agy_idle"
+  assert_screen "agy idle on tmux with identity" empty "$CAPS_TMUX" "$screen" 2 "$agy_idle"
+  assert_screen "agy idle on zellij" unknown "$CAPS_STYLED_NOID" "$screen"
+  # Identity-capable but unfetched: the adapter is asked to probe lazily.
+  [ "$(fm_composer_classify_screen "$CAPS_STYLED" "$screen")" = need-identity ] \
+    || fail "an identity-capable profile should request the lazy identity probe"
+  # No identity capability (cmux/orca/zellij): the shape is unprovable.
+  assert_screen "agy pair without identity capability" unknown "$CAPS_PLAIN" "$screen"
+  # A working agy cannot authorize injection into the region.
+  assert_screen "working agy defers" unknown "$CAPS_STYLED" "$screen" '' "$agy_working"
+  # Plain shell running sleep or other process counterexample.
+  assert_screen "sleep-pane counterexample" unknown "$CAPS_TMUX" "$screen" 2 "$none"
+  assert_screen "absent identity cannot prove agy pair" unknown "$CAPS_TMUX" "$screen" 2 probe-absent
+  typed=$'────────────────────────\n> fix the flaky test\n────────────────────────\n? for shortcuts'
+  assert_screen "agy typed" pending "$CAPS_STYLED" "$typed" '' "$agy_idle"
+  assert_screen "agy typed on tmux" pending "$CAPS_TMUX" "$typed" 1 "$agy_idle"
+  pass "matrix: agy's separated composer needs identity + structure; the > row alone never proves it"
+}
+
 test_matrix_opencode_leftbar_signals() {
   # Real idle opencode: `┃`-prefixed rows holding the "Ask anything..." hint,
   # blanks, and a Build-mode footer. Two independent idle signals: the shared
@@ -682,6 +708,7 @@ test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
 test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_pi_separated_needs_identity
+test_matrix_agy_separated_needs_identity
 test_matrix_opencode_leftbar_signals
 test_matrix_grok_titled_bottom_border
 test_matrix_kimi_bordered_shell_glyph_box
