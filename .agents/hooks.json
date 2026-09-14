@@ -1,0 +1,28 @@
+{
+  "firstmate": {
+    "PreInvocation": [
+      {
+        "command": "bin/fm-sessionstart-agy.sh"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "command": "bin/fm-arm-pretool-check.sh"
+      },
+      {
+        "matcher": "run_command",
+        "command": "bin/fm-cd-pretool-check.sh"
+      },
+      {
+        "matcher": "schedule|manage_task|send_message|invoke_subagent|define_subagent",
+        "command": "bin/fm-subagent-pretool-check.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "bin/fm-turnend-guard-agy.sh"
+      }
+    ]
+  }
+}

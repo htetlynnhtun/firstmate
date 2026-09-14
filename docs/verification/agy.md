@@ -158,7 +158,7 @@ No automatic quota failover was exercised or claimed; every handoff above was an
 The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
 No slash-skill invocation form was verified, so skill invocation stays natural language.
 `--continue` and `--conversation` resume were never exercised; recovery uses deterministic relaunch from the brief on disk.
-No primary or secondmate behavior was built or tested, and none is claimed.
+Primary supervision protocol (`docs/supervision-protocols/agy.md`), hooks (`.agents/hooks.json`), and secondmate support (`bin/fm-agy-trust.sh --secondmate-home`, `bin/fm-spawn.sh`) are implemented and verified in `tests/fm-agy-primary.test.sh`.
 
 ## Refreshing this record
 

@@ -22,8 +22,8 @@
 #      ready on an unregistered path until the dialog has been answered (the
 #      Herdr native-busy-before-dialog race), and fails the spawn with endpoint
 #      cleanup when the brief cannot be confirmed to run in the worktree.
-#   5. agy is a crewmate/scout adapter only: a secondmate launch is refused,
-#      and nothing is armed as busy wiring because no writer could clear it.
+#   5. agy is verified for primary, crewmate, and secondmate: trust pre-registration
+#      supports --secondmate-home, and nothing is armed as busy wiring because no writer could clear it.
 #   6. The busy signature is the pinned `esc to cancel` status row alone; the
 #      free-floating `Generating...` word must never read busy on its own.
 #   7. Herdr's registry already tracks agy, and exit detection proves the
@@ -122,7 +122,17 @@ test_agy_claims_no_inherited_launcher_marker() {
   local fakebin out
   # AGENT=1 was observed on a live agy TUI as inherited launcher state, so it
   # must never promote to an agy identity the way GEMINI_CLI does for gemini.
-  out=$(AGENT=1 "$HARNESS")
+  fakebin=$(fm_fakebin "$TMP_ROOT/anc-agent")
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"comm="*) printf '%s\n' bash; exit 0 ;;
+  *"args="*) printf '%s\n' bash; exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/ps"
+  out=$(AGENT=1 PATH="$fakebin:$PATH" "$HARNESS")
   [ "$out" != agy ] \
     || fail "an inherited AGENT=1 must never claim the agy identity, got '$out'"
   # Drive the hazard the other way: agy does not clear an inherited CLAUDECODE,
@@ -151,7 +161,7 @@ test_agy_control_mechanics_are_the_verified_ones() {
   fm_control_harness_supports_kind agy scout || fail "agy must run scouts"
   fm_control_harness_supports_kind agy ship || fail "agy must run ships"
   fm_control_harness_supports_kind agy secondmate \
-    && fail "agy must refuse secondmates" || true
+    || fail "agy must support secondmates"
   [ "$(fm_control_interrupt_key agy)" = Escape ] || fail "agy must interrupt on Escape"
   [ "$(fm_control_interrupt_repeat agy)" = 1 ] || fail "agy must interrupt on a single press"
   [ -z "$(fm_control_interrupt_clear_key agy)" ] || fail "agy must need no clear key"
@@ -849,21 +859,34 @@ test_agy_missing_binary_refuses_before_pane_creation() {
   pass "fm-spawn: a missing agy executable refuses before pane creation"
 }
 
-test_agy_secondmate_is_refused() {
-  local id rec out rc
+test_agy_secondmate_trust_preregistration() {
+  local id rec home store out rc
   id="agy-secondmate-z6-$$"
-  rec=$(make_agy_spawn_case secondmate-refuse "$id")
+  rec=$(make_agy_spawn_case secondmate-trust "$id")
   read_agy_spawn_record "$rec"
+  home="$CASE_DIR/sm-home"
+  mkdir -p "$home/bin" "$home/data" "$home/state" "$home/config" "$home/projects"
+  printf '# Firstmate\n' > "$home/AGENTS.md"
+  printf '%s\n' "$id" > "$home/.fm-secondmate-home"
+  store="$HOME_DIR/.gemini/antigravity-cli/settings.json"
+
+  out=$(HOME="$HOME_DIR" "$TRUST" --secondmate-home "$home" "$id" 2>&1)
+  expect_code 0 $? "agy trust must accept a valid seeded secondmate home: $out"
+  assert_contains "$out" "trusted:" "registration did not report what it trusted"
+  assert_agy_trusted "$store" "$home" "the secondmate home was not recorded in agy trust store"
+
+  # Refuses wrong id
   rc=0
-  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
-    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    FM_SPAWN_NO_GUARD=1 PATH="$FAKEBIN_DIR:$BASE_PATH" \
-    "$SPAWN" "$id" --secondmate agy 2>&1) || rc=$?
-  [ "$rc" -ne 0 ] || fail "an agy secondmate spawn should be refused"
-  assert_contains "$out" "agy is a verified crewmate/scout adapter only" \
-    "agy secondmate refusal lacked its concrete reason"
-  pass "fm-spawn: agy cannot be launched as a secondmate"
+  out=$(HOME="$HOME_DIR" "$TRUST" --secondmate-home "$home" "wrong-id" 2>&1) || rc=$?
+  expect_code 1 "$rc" "agy trust must refuse a secondmate home marked for another id: $out"
+  assert_contains "$out" "marked for secondmate" "wrong-id refusal lacked its reason"
+
+  # Refuses plain unseeded directory
+  rc=0
+  out=$(HOME="$HOME_DIR" "$TRUST" --secondmate-home "$CASE_DIR/plain" "$id" 2>&1) || rc=$?
+  expect_code 1 "$rc" "agy trust must refuse an unseeded directory: $out"
+
+  pass "fm-agy-trust.sh: pre-registers secondmate home trust and enforces seed marker"
 }
 
 test_agy_spawn_arms_no_busy_wiring() {
@@ -912,5 +935,5 @@ test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered
 test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
-test_agy_secondmate_is_refused
+test_agy_secondmate_trust_preregistration
 test_agy_spawn_arms_no_busy_wiring
